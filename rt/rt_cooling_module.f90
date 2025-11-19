@@ -337,6 +337,9 @@ contains
     real(dp),save:: rho, TR, one_over_C_v, E_rad, dE_T, fluxMag, mom_fact
     real(dp),save:: G0, eff_peh, cdex, ncr
     logical::newAtomicCons=.true.
+    !cooling Guglielmo Costa
+    real(dp):: LAMBDA_cool, log10_Lambda
+    real(dp):: l10num_den, l10num_den2, l10num_den3, TKnew
     !---------------------------------------------------------------------
     dt_ok=.false.
     nHe=0.25*nH(icell)*Y/X  !         Helium number density
@@ -596,6 +599,31 @@ contains
        endif
        fracMax=MAX(fracMax,dUU)
        TK=dT2*mu
+    ! dT2 is the new value of Temperature / mu
+    ! I need to apply the cooling to the TK and then update the dT2 variable too
+       
+    ! Apply cooling to compute the temperature
+    ! fitting formula for the cooling function LAMBDA_cool in erg cm3 s-1
+
+    !    l10num_den = log10(nH(icell))
+    !    l10num_den2 = log10(nH(icell)) * log10(nH(icell))
+    !    l10num_den3 = log10(nH(icell)) * log10(nH(icell)) * log10(nH(icell))
+    !    if (nH(icell) .lt. 1.d0) then ! Low density 
+    !       log10_Lambda = 0.369879 * l10num_den3 - 1.11336 * l10num_den2 + 4.3852 * l10num_den - 27.9421
+    !       LAMBDA_cool = 10**log10_Lambda   
+    !    elseif (nH(icell) .gt. 1.d0 .and. nH(icell) .lt. 9.9d10) then ! intermediate density
+    !       log10_Lambda = - 0.00107531 * l10num_den3 + 0.0539207 * l10num_den2 + 1.08451 * l10num_den - 27.7267
+    !       LAMBDA_cool = 10**log10_Lambda 
+    !    else !high density
+    !       log10_Lambda = 0.00743196 * l10num_den3 - 0.335734 * l10num_den2 + 5.59592 * l10num_den + -41.2505
+    !       LAMBDA_cool = 10**log10_Lambda
+    !    endif
+
+    !    TKnew = TK - LAMBDA_cool * mH * ddt(icell) / (nH(icell) * kb)  ! Cooling applied, approximation n == nH
+    !    TK = TKnew
+    !    dT2 = TK / mu
+    !    print*,'I am cooling ! ', TK
+
     endif
 
 #if NGROUPS>0
