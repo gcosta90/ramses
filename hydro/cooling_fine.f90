@@ -581,6 +581,21 @@ subroutine coolfine1(ind_grid,ngrid,ilevel)
      else if(cooling .or. neq_chem)then
         do i=1,nleaf
            uold(ind_leaf(i),neul) = T2(i) + T2min(i) + ekk(i) + err(i) + emag(i)
+        !    if(T2(i)/ekk(i) .lt. 1d-4) then
+        !         write(*,*) 'Very low temp/kinetic energy ratio < 1d-4', T2(i)/ekk(i)
+        !         stop
+        !     elseif(T2(i)/ekk(i) .lt. 1d-5) then
+        !         write(*,*) 'Very low temp/kinetic energy ratio < 1d-5', T2(i)/ekk(i)
+        !         stop
+        !     elseif(T2(i)/ekk(i) .lt. 1d-6) then
+        !         write(*,*) 'Very low temp/kinetic energy ratio < 1d-6', T2(i)/ekk(i)
+        !         stop
+        !    endif
+           if(T2(i) .lt. 0d0) write(*,*) 'Negative temperature!! After cooling', T2(i)
+           if(ekk(i) .lt. 0d0) then
+              write(*,*) 'Negative kinetic energy!!  After cooling', ekk(i)
+              stop
+           endif
         end do
      endif
 
