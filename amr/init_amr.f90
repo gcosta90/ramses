@@ -343,8 +343,22 @@ subroutine init_amr
      trestart = t
 
      ! determine moment of next output
-     tout_next = (floor(t/delta_tout)+1)*delta_tout
-     aout_next = (floor(aexp/delta_aout)+1)*delta_aout
+     if(myid==1 .and. delta_tout<=0.0D0)then
+        write(*,*)'WARNING: delta_tout<=0 on restart; periodic time outputs disabled'
+     endif
+     if(delta_tout>0.0D0 .and. delta_tout/=HUGE(1.0D0))then
+        tout_next = (floor(t/delta_tout)+1)*delta_tout
+     else
+        tout_next = HUGE(1.0D0)
+     endif
+     if(myid==1 .and. delta_aout<=0.0D0)then
+        write(*,*)'WARNING: delta_aout<=0 on restart; periodic scale-factor outputs disabled'
+     endif
+     if(delta_aout>0.0D0 .and. delta_aout/=HUGE(1.0D0))then
+        aout_next = (floor(aexp/delta_aout)+1)*delta_aout
+     else
+        aout_next = HUGE(1.0D0)
+     endif
      iout = 1
      if (.not.all(tout==HUGE(1.0D0))) then
         do while(tout(iout)<=t)
