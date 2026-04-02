@@ -12,7 +12,7 @@ subroutine backup_hydro(filename, filename_desc)
 
   integer :: i, ivar, ncache, ind, ilevel, igrid, iskip, istart, ibound
   integer :: unit_out, unit_info
-  real(dp) :: d
+  real(dp) :: d, EK, EM
 #ifdef SOLVERmhd
   real(dp) :: A, B, C
 #endif
@@ -151,6 +151,12 @@ subroutine backup_hydro(filename, filename_desc)
                  end do
 #endif
                  xdp(i) = (gamma-1d0)*xdp(i)
+                !  if (xdp(i) < 0d0) then
+                !     EK = 0.5d0*uold(ind_grid(i)+iskip, 2)**2/d + 0.5d0*uold(ind_grid(i)+iskip, 3)**2/d + 0.5d0*uold(ind_grid(i)+iskip, 4)**2/d
+                !     EM = 0.5*(A**2+B**2+C**2)
+                !     write (*,*) 'Warning: negative pressure. writing P, Etot, Ekin, EM', xdp(i), uold(ind_grid(i)+iskip, neul), EK, EM
+                !     stop
+                !  end if
               end do
               field_name = 'pressure'
               call generic_dump(field_name, info_var_count, xdp, unit_out, dump_info_flag, unit_info)
