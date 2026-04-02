@@ -1170,6 +1170,19 @@ subroutine accrete_sink(ind_grid,ind_part,ind_grid_part,ng,np,ilevel,on_creation
                        rtunew(indp(j,ind),iGroups(igroup))=rtunew(indp(j,ind),iGroups(igroup))+Np_inj
                     enddo
                  end if
+
+            !    !!FROM ROMAIN FOR PROTOSTAR RADIATIVE FEEDBACK !! first test to check with photon's cross section to zero.
+            !    if(rt_protostar_m1)then
+            !       ! To be reconsidered when we will do Hii ionisation for later evolution.
+            !       ! weight = 1
+            !       ! real(dp),parameter:: Tstar = 1d5
+            !       ! real(dp),parameter:: aR=7.56591469318689378e-015_dp !erg cm**-3 K**-4
+            !       Np_inj = 7.56591469318689378e-015*(1d5**4) / (scale_d*scale_v**2) * (pi*rsink_star(isink)**2*clight/scale_v) /scale_Np
+            !       do igroup=1,nGroups
+            !          rtunew(indp(j,ind),iGroups(igroup))=rtunew(indp(j,ind),iGroups(igroup)) + Np_inj*dtnew(ilevel)/((group_egy(1)*ev2erg)/scale_d/scale_v**2)
+            !       enddo
+            !    end if
+                 
 #endif
               end if
            end if
@@ -1189,6 +1202,7 @@ subroutine compute_accretion_rate(write_sinks)
   use mpi_mod
   implicit none
   logical::write_sinks
+  logical::PMS_evolution
 
   !----------------------------------------------------------------------------
   ! This routine computes the accretion rate onto the sink particles based
@@ -1205,6 +1219,9 @@ subroutine compute_accretion_rate(write_sinks)
   real(dp),dimension(1:nsinkmax)::dMEDoverdt,r2,rho_inf
   real(dp),dimension(1:nsinkmax)::dMEDoverdt_smbh
   real(dp)::T2_gas,delta_mass_min
+
+  ! PMS evolution active with .true.
+  PMS_evolution=.true.
 
   ! Gravitational constant
   factG=1d0
@@ -1309,6 +1326,24 @@ subroutine compute_accretion_rate(write_sinks)
      if(msink(isink).ge.max_mass_nsc*M_sun/scale_m.and.mass_smbh_seed>0.0)dMsink_overdt(isink)=0.0
 
   end do
+
+  if (PMS_evolution .and. nsink > 0)then
+     if (write_sinks .and. first_time_pms) then
+        ! compute_accretion_rate(write_sinks) is called twice. The first time is for the 
+        ! initialization of the sink particle. The second time is to compute_accretion_rate,
+        ! and define the properties of the sink particle.
+        ! We use write_sinks=.true. and first_time_pms=.true. to initialize PARSEC PMS star
+        if (myid==1)print*,'initializing PARSEC PMS evolution properties of the sink particles...'
+        ! call initialize_pms_evolution
+        first_time_pms=.false.
+     end if
+     if (write_sinks .and. .not. first_time_pms)then
+        ! If first_time_pms is .false., we can evolve the PMS star properties following
+        ! the properties of the sink particle.
+        if(myid==1)print*,'computing PARSEC PMS evolution following sink particles accretion...'
+        ! call compute_pms_evolution
+     end if
+  end if
 
   if (write_sinks)then
      call print_sink_properties(dMEDoverdt,dMEDoverdt_smbh,rho_inf,r2)

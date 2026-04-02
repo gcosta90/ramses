@@ -1,5 +1,7 @@
 module pm_parameters
   use amr_parameters, ONLY: dp
+
+  logical::first_time_pms=.true.    ! Flag to check for the first call to PARSEC PMS evolution
   integer::nsinkmax=2000            ! Maximum number of sinks
   integer::npartmax=0               ! Maximum number of particles
   integer::npart=0                  ! Actual number of particles
