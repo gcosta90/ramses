@@ -4,7 +4,7 @@
 # Compilation time parameters
 
 # Do we want a debug build? 1=Yes, 0=No
-DEBUG = 0
+DEBUG = 1
 # Do we want to test coverage?
 GCOV = 0
 # Compiler flavor: GNU or INTEL
@@ -14,21 +14,21 @@ MACHINE = generic
 # Size of vector cache
 NVECTOR = 32
 # Number of dimensions
-NDIM = 1
+NDIM = 3
 # Float precision size
 NPRE = 8
 # hydro/mhd/rhd solver
-SOLVER = hydro
+SOLVER = mhd
 # Patch
 PATCH =
 # Use RT? 1=Yes, 0=No
-RT = 0
+RT = 1
 # Use turbulence? 1=Yes, 0=No (requires fftw3)
 USE_TURB = 0
 # Use MPI? 1=Yes, 0=No
 MPI = 0
 # Root name of executable
-EXEC = ramses
+EXEC = ramses_debug_nompi_rhd
 # Number of additional energies
 NENER = 0
 # Use Grackle cooling? 1=Yes, 0=No
@@ -39,7 +39,7 @@ NMETALS = 0
 ATON = 0
 # Number of ions for RT
 # use 1 for HI+HII, +1 for added H2, +2 for added HeI, HeII, HeIII
-NIONS = 0
+NIONS = 1
 # Number of photon groups for RT
 NGROUPS = 0
 # Number of passive scalars
