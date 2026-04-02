@@ -57,7 +57,120 @@ module rt_cooling_module
 
   real(dp),dimension(nIons, 2)::UVrates     !UV backgr. heating/ion. rates
 
+  integer, parameter :: nDataKrome = 100
+  
+  real(dp), dimension(nDataKrome), parameter :: density_Krome = (/ &
+    1.010d-01, 1.609d-01, 2.563d-01, 4.083d-01, 6.505d-01, 1.036d+00,  &
+    1.651d+00, 2.630d+00, 4.190d+00, 6.674d+00, 1.063d+01, 1.694d+01,  &
+    2.698d+01, 4.299d+01, 6.848d+01, 1.091d+02, 1.738d+02, 2.769d+02,  &
+    4.411d+02, 7.026d+02, 1.119d+03, 1.783d+03, 2.841d+03, 4.525d+03,  &
+    7.209d+03, 1.148d+04, 1.830d+04, 2.915d+04, 4.643d+04, 7.397d+04,  &
+    1.178d+05, 1.877d+05, 2.990d+05, 4.764d+05, 7.589d+05, 1.209d+06,  &
+    1.926d+06, 3.068d+06, 4.888d+06, 7.787d+06, 1.240d+07, 1.976d+07,  &
+    3.148d+07, 5.015d+07, 7.989d+07, 1.273d+08, 2.028d+08, 3.230d+08,  &
+    5.146d+08, 8.197d+08, 1.306d+09, 2.080d+09, 3.314d+09, 5.280d+09,  &
+    8.411d+09, 1.340d+10, 2.134d+10, 3.400d+10, 5.417d+10, 8.629d+10,  &
+    1.375d+11, 2.190d+11, 3.489d+11, 5.558d+11, 8.854d+11, 1.410d+12,  &
+    2.247d+12, 3.580d+12, 5.703d+12, 9.084d+12, 1.447d+13, 2.305d+13,  &
+    3.673d+13, 5.851d+13, 9.321d+13, 1.485d+14, 2.365d+14, 3.768d+14,  &
+    6.003d+14, 9.563d+14, 1.524d+15, 2.427d+15, 3.866d+15, 6.159d+15,  &
+    9.812d+15, 1.563d+16, 2.490d+16, 3.967d+16, 6.320d+16, 1.007d+17,  &
+    1.604d+17, 2.555d+17, 4.070d+17, 6.484d+17, 1.033d+18, 1.646d+18,  &
+    2.622d+18, 4.176d+18, 6.653d+18, 1.060d+19 /)
+
+  real(dp), dimension(nDataKrome), parameter :: temperature_Krome = (/ &
+    3.020d+02, 4.128d+02, 5.635d+02, 7.626d+02, 9.886d+02, 1.124d+03,  &
+    1.066d+03, 9.196d+02, 7.829d+02, 6.804d+02, 5.982d+02, 5.276d+02,  &
+    4.655d+02, 4.110d+02, 3.639d+02, 3.244d+02, 2.920d+02, 2.663d+02,  &
+    2.467d+02, 2.329d+02, 2.243d+02, 2.205d+02, 2.209d+02, 2.249d+02,  &
+    2.321d+02, 2.421d+02, 2.549d+02, 2.703d+02, 2.880d+02, 3.079d+02,  &
+    3.300d+02, 3.543d+02, 3.809d+02, 4.096d+02, 4.417d+02, 4.761d+02,  &
+    5.116d+02, 5.470d+02, 5.816d+02, 6.149d+02, 6.473d+02, 6.861d+02,  &
+    7.289d+02, 7.728d+02, 8.171d+02, 8.622d+02, 9.077d+02, 9.531d+02,  &
+    1.004d+03, 1.067d+03, 1.129d+03, 1.183d+03, 1.223d+03, 1.249d+03,  &
+    1.269d+03, 1.297d+03, 1.347d+03, 1.408d+03, 1.465d+03, 1.510d+03,  &
+    1.540d+03, 1.562d+03, 1.580d+03, 1.598d+03, 1.621d+03, 1.643d+03,  &
+    1.666d+03, 1.691d+03, 1.720d+03, 1.755d+03, 1.794d+03, 1.836d+03,  &
+    1.880d+03, 1.926d+03, 1.973d+03, 2.022d+03, 2.072d+03, 2.123d+03,  &
+    2.173d+03, 2.222d+03, 2.268d+03, 2.309d+03, 2.340d+03, 2.355d+03,  &
+    2.343d+03, 2.348d+03, 2.410d+03, 2.496d+03, 2.593d+03, 2.699d+03,  &
+    2.811d+03, 2.933d+03, 3.065d+03, 3.209d+03, 3.368d+03, 3.546d+03,  &
+    3.748d+03, 3.983d+03, 4.272d+03, 5.061d+03 /)
+
 CONTAINS
+
+REAL(dp) FUNCTION Interpol(x_data,y_data,x_query)
+    IMPLICIT NONE
+    REAL(dp), INTENT(IN) :: x_data(:), y_data(:)
+    REAL(dp), INTENT(IN) :: x_query
+    INTEGER :: indx, NN
+
+    NN = size(x_data)
+    Indx = Binary_search(x_data,NN,x_query)
+
+    if(Indx .ge. NN) then
+        Interpol = y_data(NN)
+    else
+        Interpol = Interpolation(x_data(indx),x_data(indx+1),y_data(indx),y_data(indx+1),x_query)
+    endif
+    return
+END FUNCTION Interpol
+
+!This function search the two point of the dataset nearest the x-value
+!giving the left value
+INTEGER FUNCTION Binary_search(x_data,NN,x_query)
+    IMPLICIT NONE
+    INTEGER, INTENT(IN) :: NN
+    REAL(dp), DIMENSION(NN), INTENT(IN) :: x_data
+    REAL(dp), INTENT(IN) :: x_query
+    ! Given an array and a value, returns the index of the element that
+    ! is closest to, but less than, the given value.
+    ! Uses a binary search algorithm.
+    integer :: left, mid, right,ll,error
+    real(dp) :: d,ord
+
+    d = 1e-9        !This is the tollerance
+    
+    left = 1
+    right = NN
+    ord = x_data(right)-x_data(left)
+    do
+        if (left > right) then
+            exit
+        endif
+        mid = nint((left+right) / 2.0)
+        if ( abs(x_data(mid) - x_query) <= d) then
+            Binary_search = mid
+            return
+        else if (ord > 0 ) then
+            if (x_data(mid) > x_query) then
+                right = mid - 1
+            else
+                left = mid + 1
+            end if
+        else
+            if (x_data(mid) > x_query) then
+                left = mid + 1
+            else
+                right = mid - 1
+            end if
+        end if
+    end do
+    Binary_search = right
+    RETURN
+END FUNCTION Binary_search
+
+!This function calculates the linear interpolation of a X-value between
+!the two given values
+REAL(dp) FUNCTION Interpolation(x_a,x_b,y_a,y_b,x_query)
+    IMPLICIT NONE
+    REAL(dp), INTENT(IN) :: x_a,x_b,y_a,y_b,x_query
+    
+    Interpolation = ((x_b-x_query)*y_a+(x_query-x_a)*y_b)/(x_b-x_a)         !=y(x)
+
+    RETURN
+END FUNCTION Interpolation
+
 
 !XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 SUBROUTINE rt_set_model(h,omegab, omega0, omegaL, astart_sim, T2_sim)
@@ -620,9 +733,14 @@ contains
     !    endif
 
     !    TKnew = TK - LAMBDA_cool * mH * ddt(icell) / (nH(icell) * kb)  ! Cooling applied, approximation n == nH
-    !    TK = TKnew
+       
+    !     CONSTANT T EXPERIMENT
+    !    TK = 2d1 !ADD the polytropic function T = 160 * n^0.089 here. Or a better fitting formula.
     !    dT2 = TK / mu
     !    print*,'I am cooling ! ', TK
+    ! Interpolated Temperature from T-n table
+       TK = Interpol(density_Krome, temperature_Krome, nH(icell))
+       dT2 = TK / mu
 
     endif
 
