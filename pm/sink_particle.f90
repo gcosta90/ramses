@@ -38,7 +38,7 @@ subroutine create_sink
 #endif
 
   ! DO NOT MODIFY FLAG2 BETWEEN CLUMP_FINDER AND MAKE_SINK_FROM_CLUMP
-  if (create_sinks)then
+  if (create_sinks .and. nsink < 1)then ! to create one sink and stop the creation.
 
      ! Run the clump finder,(produce no output, keep clump arrays allocated)
      call clump_finder(.false.,.true.)
