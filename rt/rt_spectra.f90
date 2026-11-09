@@ -89,7 +89,7 @@ FUNCTION integrateSpectrum(X, Y, N, e0, e1, species, func)
   !      do i=1,N
   !         write(*,*) xx(i),f(i),yy(i)
   !      end do
-  !      stop
+  !      call clean_stop
   !   endif
   !endif
 
@@ -674,7 +674,7 @@ SUBROUTINE star_RT_feedback(ilevel, dt)
   ! End loop over cpus
 
   if(heat_unresolved_HII.gt.0) &
-       call heat_unresolved_HII_regions(ilevel,dtnew(ilevel))
+       call heat_unresolved_HII_regions(ilevel)
 
 111 format('   Entering star_rt_feedback for level ',I2)
 #endif

@@ -27,21 +27,30 @@ endif
 #
 ifeq ($(MACHINE),lumi)
    MPIF90 = ftn
-   # mismatch flag needed to circumvent MPI_ALLREDUCE error
-   FFLAGS_BASE += -fallow-argument-mismatch
+   # mismatch flag needed to circumvent MPI_ALLREDUCE error (gfortran only)
+   ifeq ($(COMPILER),GNU)
+      FFLAGS_BASE += -fallow-argument-mismatch
+   endif
 endif
 
 #
 ifeq ($(MACHINE),marenostrum)
-   MPIF90 = mpif90
+   ifeq ($(COMPILER),INTEL)
+      MPIF90 = mpif90
+   else ifeq ($(COMPILER),INTELX)
+      MPIF90 = mpiifx
+   endif
 endif
 
 #
 ifeq ($(MACHINE),meluxina)
-   MPIF90 = mpif90
    ifeq ($(COMPILER),GNU)
+      MPIF90 = mpif90
       FFLAGS_OPT += -march=native
+   else ifeq ($(COMPILER),INTELX)
+      MPIF90 = mpiifx
    endif
+   # old intel ifort compiler not available on meluxina
 endif
 
 #

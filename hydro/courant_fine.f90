@@ -82,7 +82,7 @@ subroutine courant_fine(ilevel)
         end if
 
 #if USE_TURB==1
-        if (turb .AND. turb_type/=3) then
+        if (driven_turb) then
            do idim=1,ndim
               do i=1,nleaf
                  gg(i,idim)=gg(i,idim)+fturb(ind_leaf(i),idim)
@@ -166,6 +166,7 @@ subroutine cmpdt(uu,gg,dx,dt,ncell)
   use hydro_parameters
   use const
   implicit none
+  real(dp), external :: viscous_dt
   integer::ncell
   real(dp)::dx,dt
   real(dp),dimension(1:nvector,1:nvar)::uu
@@ -213,7 +214,7 @@ subroutine cmpdt(uu,gg,dx,dt,ncell)
            write(*,*)'rho  =',uu(k,1)
            write(*,*)'P    =',uu(k,neul)
            write(*,*)'vel  =',uu(k,2:ndim+1)
-           stop
+           call clean_stop
         end if
      end do
   end if
@@ -275,6 +276,11 @@ subroutine cmpdt(uu,gg,dx,dt,ncell)
      dtcell = dx/uu(k,neul)*(sqrt(one+two*courant_factor*uu(k,1))-one)/uu(k,1)
      dt = min(dt,dtcell)
   end do
+
+  ! Maximum time step from viscosity
+  if (add_viscosity) then
+      dt = min(dt, viscous_dt(dx))
+  end if
 
 end subroutine cmpdt
 !###########################################################

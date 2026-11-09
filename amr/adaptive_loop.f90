@@ -11,6 +11,7 @@ subroutine adaptive_loop
   use turb_commons
 #endif
   use mpi_mod
+  use iso_fortran_env, only: output_unit
   implicit none
 #ifndef WITHOUTMPI
   integer(kind=8)::n_step
@@ -20,6 +21,9 @@ subroutine adaptive_loop
   real(kind=8),save::tstart=0
 #endif
   integer::ilevel,idim,ivar
+
+  ! Force write (buffered) log: banner and parameters
+  flush(output_unit)
 
 #ifndef WITHOUTMPI
   tt1=MPI_WTIME()
@@ -40,7 +44,7 @@ subroutine adaptive_loop
   if(aton)call init_radiation        ! Initialize radiation variables
 #endif
 #if USE_TURB==1
-  if(turb) call init_turb
+  if(driven_turb .or. (initial_turb .and. nrestart==0)) call init_turb
 #endif
   if(nrestart==0)call init_refine    ! Build initial AMR grid
 
@@ -76,6 +80,8 @@ subroutine adaptive_loop
   if(myid==1)write(*,*)'Starting time integration'
 
   do ! Main time loop
+     ! Force write (buffered) log of the previous coarse step
+     flush(output_unit)
                                call timer('coarse levels','start')
 
 #ifndef WITHOUTMPI

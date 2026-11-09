@@ -1835,7 +1835,7 @@ SUBROUTINE cmp_mag_flx(qRT,irt1,irt2,jrt1,jrt2,krt1,krt2, &
                        -ST*SB/(ST-SB)*(qRR(l,6)-qLL(l,6)) &
                        +SR*SL/(SR-SL)*(qRR(l,7)-qLL(l,7))
 
-               else
+               else !iriemann2d = 0, 1 or 2
 
                   ! find the average value of E
                   E = forth*(ELL+ERL+ELR+ERR)
@@ -1883,6 +1883,7 @@ SUBROUTINE cmp_mag_flx(qRT,irt1,irt2,jrt1,jrt2,krt1,krt2, &
 #endif
 
                   zero_flux = 0.0
+                  ! Remark case 3,4 and 5 are handled above
                   SELECT CASE (iriemann2d)
                   CASE (1)
                      CALL athena_roe   (qleft,qright,fmean_x,zero_flux)
@@ -2050,7 +2051,7 @@ subroutine ctoprim(uin,q,bf,gravin,dt,ngrid)
                  if(uin(l,i,j,k,1).le.smallr)then
                     write(*,*)'negative density'
                     write(*,*)uin(l,i,j,k,1)
-                    stop
+                    call clean_stop
                  end if
               end do
            end if

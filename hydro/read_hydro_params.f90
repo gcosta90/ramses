@@ -1,7 +1,7 @@
 subroutine read_hydro_params(nml_ok)
   use amr_commons
   use hydro_commons
-  use mpi_mod
+  use cooling_module, only:X,Y
   implicit none
   logical::nml_ok
   !--------------------------------------------------
@@ -18,47 +18,6 @@ subroutine read_hydro_params(nml_ok)
   !--------------------------------------------------
   ! Namelist definitions
   !--------------------------------------------------
-
-  ! Initial conditions parameters
-  namelist/init_params/condinit_kind,filetype,initfile,multiple,nregion,region_type &
-       & ,x_center,y_center,z_center,aexp_ini &
-       & ,length_x,length_y,length_z,exp_region &
-       & ,d_region,u_region,v_region,w_region,p_region &
-#ifdef SOLVERmhd
-       & ,A_region,B_region,C_region,B_ave &
-#endif
-#if NVAR>NHYDRO+NENER
-       & ,var_region &
-#endif
-#if NENER>0
-       & ,prad_region &
-#endif
-       & ,omega_b,alpha_dense_core,beta_dense_core,crit_dense_core,delta_rho,theta_mag,mass_c,Mach
-
-  ! Hydro parameters
-  namelist/hydro_params/gamma,courant_factor,smallr,smallc &
-       & ,niter_riemann,slope_type,difmag &
-#if NENER>0
-       & ,gamma_rad &
-#endif
-#ifdef SOLVERmhd
-       & ,riemann2d,slope_mag_type,eta_mag &
-       & ,allow_switch_solver, allow_switch_solver2D &
-       & ,switch_solv_B,switch_solv_dens,switch_solv_min_dens &
-#endif
-       & ,pressure_fix,beta_fix,scheme,riemann &
-       & ,strict_equilibrium
-
-  ! Refinement parameters
-  namelist/refine_params/x_refine,y_refine,z_refine,r_refine &
-       & ,a_refine,b_refine,exp_refine,jeans_refine,mass_cut_refine &
-       & ,m_refine,mass_sph,err_grad_d,err_grad_p,err_grad_u &
-       & ,floor_d,floor_u,floor_p,ivar_refine,var_cut_refine &
-#ifdef SOLVERmhd
-       & ,err_grad_A,err_grad_B,err_grad_C,err_grad_B2 &
-       & ,floor_A,floor_B,floor_C,floor_B2,interpol_mag_type &
-#endif
-       & ,interpol_var,interpol_type,sink_refine
 
   ! Boundary parameters
   namelist/boundary_params/nboundary,bound_type &
@@ -84,7 +43,7 @@ subroutine read_hydro_params(nml_ok)
   namelist/cooling_params/cooling,metal,isothermal,haardt_madau,J21 &
        & ,barotropic_eos,barotropic_eos_form,polytrope_rho,polytrope_index,T_eos,mu_gas &
        & ,a_spec,self_shielding,z_ave,z_reion,ind_rsink,T2max,neq_chem &
-       & ,cooling_ism
+       & ,cooling_ism,X,Y
 
   ! Star formation parameters
   namelist/sf_params/m_star,n_star,T2_star,g_star,del_star &
@@ -113,12 +72,11 @@ subroutine read_hydro_params(nml_ok)
 #endif
 
   ! Read namelist file
+  call read_refine_params(1,nml_ok) !must be read before hydro solver params
+  if(hydro)call read_solver_params(1,nml_ok)
+  call read_init_params(1,nml_ok)
+
   rewind(1)
-  read(1,NML=init_params,END=121)
-  goto 122
-121 write(*,*)' You need to set up namelist &INIT_PARAMS in parameter file'
-  call clean_stop
-122 rewind(1)
 
   ! Fail if physics params is found
   read(1, NML=physics_params, end=110)
@@ -126,10 +84,6 @@ subroutine read_hydro_params(nml_ok)
        write(*, *) 'ERROR: the namelist contains the old `physics_params`. It has been depreciated in favor of the sections feedback_, cooling_, sf_ and units_params.'
   call clean_stop
 110 rewind(1)
-  if(nlevelmax>levelmin)read(1,NML=refine_params)
-  rewind(1)
-  if(hydro)read(1,NML=hydro_params)
-  rewind(1)
   read(1,NML=boundary_params,END=103)
   simple_boundary=.true.
   goto 104
@@ -158,63 +112,7 @@ subroutine read_hydro_params(nml_ok)
   if(aton)call read_radiation_params(1)
 #endif
 
-! MHD sets enums for riemann solvers, hydro just does a string compare
 #ifdef SOLVERmhd
-  !------------------------------------------------
-  ! set ischeme
-  !------------------------------------------------
-  SELECT CASE (scheme)
-  CASE ('muscl')
-    ischeme = 0
-  CASE ('induction')
-    ischeme = 1
-
-  CASE DEFAULT
-    write(*,*)'unknown scheme'
-    nml_ok=.false.
-  END SELECT
-  !------------------------------------------------
-  ! set iriemann
-  !------------------------------------------------
-  SELECT CASE (riemann)
-  CASE ('llf')
-    iriemann = 0
-  CASE ('roe')
-    iriemann = 1
-  CASE ('hll')
-    iriemann = 2
-  CASE ('hlld')
-    iriemann = 3
-  CASE ('upwind')
-    iriemann = 4
-  CASE ('hydro')
-    iriemann = 5
-
-  CASE DEFAULT
-    write(*,*)'unknown riemann solver'
-    nml_ok=.false.
-  END SELECT
-  !------------------------------------------------
-  ! set iriemann
-  !------------------------------------------------
-  SELECT CASE (riemann2d)
-  CASE ('llf')
-    iriemann2d = 0
-  CASE ('roe')
-    iriemann2d = 1
-  CASE ('upwind')
-    iriemann2d = 2
-  CASE ('hll')
-    iriemann2d = 3
-  CASE ('hlla')
-    iriemann2d = 4
-  CASE ('hlld')
-    iriemann2d = 5
-  CASE DEFAULT
-    write(*,*)'unknown 2D riemann solver'
-    nml_ok=.false.
-  END SELECT
-
   !--------------------------------------------------
   ! Make sure virtual boundaries are expanded to
   ! account for staggered mesh representation
@@ -258,6 +156,15 @@ subroutine read_hydro_params(nml_ok)
   if(barotropic_eos)then
     ! set T2 for computations
     T2_eos = T_eos/mu_gas
+
+    ! check the EOS form
+    SELECT CASE (barotropic_eos_form)
+    CASE ('legacy','isothermal','polytrope','double_polytrope','2nd_collapse','custom')
+       ! accepted values
+    CASE DEFAULT
+       if(myid==1)write(*,*)'Error: unknown barotropic_eos_form ',barotropic_eos_form
+       nml_ok=.false.
+    END SELECT
   endif
 
   !--------------------------------------------------
@@ -447,16 +354,6 @@ subroutine read_hydro_params(nml_ok)
 #endif
   end do
 
-  !-----------------------------------
-  ! Rearrange level dependent arrays
-  !-----------------------------------
-  do i=nlevelmax,levelmin,-1
-     jeans_refine(i)=jeans_refine(i-levelmin+1)
-  end do
-  do i=1,levelmin-1
-     jeans_refine(i)=-1
-  end do
-
   !-------------------------------------------------------------
   ! Shift passive variable indices depending on namelist params
   !-------------------------------------------------------------
@@ -499,16 +396,349 @@ subroutine read_hydro_params(nml_ok)
 
   ! Last variable is ichem
 
+end subroutine read_hydro_params
+!###############################################################
+!###############################################################
+!###############################################################
+subroutine read_init_params(namelist_unit,nml_ok)
+   use amr_parameters
+   use amr_commons
+   use hydro_parameters
+   use collapse_parameters
+   implicit none
+   integer,intent(in)::namelist_unit
+   logical,intent(inout)::nml_ok
+   integer::nml_err
+
+  ! Initial conditions parameters
+  namelist/init_params/condinit_kind,filetype,initfile,multiple,nregion,region_type &
+       & ,x_center,y_center,z_center,aexp_ini &
+       & ,length_x,length_y,length_z,exp_region &
+       & ,d_region,u_region,v_region,w_region,p_region &
 #ifdef SOLVERmhd
-  !-----------------------------------
-  ! Set magnetic slope limiters
-  !-----------------------------------
-  if (slope_mag_type == -1) then
-    slope_mag_type = slope_type
-  endif
-  if (interpol_mag_type == -1) then
-    interpol_mag_type = interpol_type
-  endif
+       & ,A_region,B_region,C_region,B_ave &
+#endif
+#if NVAR>NHYDRO+NENER
+       & ,var_region &
+#endif
+#if NENER>0
+       & ,prad_region &
+#endif
+       & ,omega_b,alpha_dense_core,beta_dense_core,crit_dense_core,delta_rho,theta_mag,mass_c,Mach
+
+   ! Go to the beginning of the file
+   rewind(namelist_unit)
+
+   ! Read namelist
+   read(namelist_unit,NML=init_params,IOSTAT=nml_err)
+
+   if(nml_err<0)then
+      ! EOF reached before namelist was found
+      if(myid==1)write(*,*)'You need to set up namelist &INIT_PARAMS in parameter file.'
+      nml_ok=.false.
+   elseif(nml_err>0)then
+      if(myid==1)write(*,*)'Error reading namelist &INIT_PARAMS. Check formatting.'
+      nml_ok=.false.
+   endif
+
+end subroutine read_init_params
+!###############################################################
+!###############################################################
+!###############################################################
+subroutine read_solver_params(namelist_unit,nml_ok)
+   use amr_parameters
+   use amr_commons
+   use hydro_parameters
+   implicit none
+   integer,intent(in)::namelist_unit
+   logical,intent(inout)::nml_ok
+   integer::nml_err
+
+   ! Hydro parameters
+   namelist/hydro_params/gamma,courant_factor,smallr,smallc &
+       & ,niter_riemann,slope_type,difmag &
+#if NENER>0
+       & ,gamma_rad &
+#endif
+#ifdef SOLVERmhd
+       & ,riemann2d,slope_mag_type,eta_mag &
+       & ,allow_switch_solver, allow_switch_solver2D &
+       & ,switch_solv_B,switch_solv_dens,switch_solv_min_dens &
+#endif
+       & ,pressure_fix,beta_fix,scheme,riemann &
+       & ,strict_equilibrium &
+       & ,add_viscosity,viscosity_kind,nu_viscosity_shear, nu_viscosity_bulk
+
+   ! Go to the beginning of the file
+   rewind(namelist_unit)
+
+   ! Read namelist
+   read(namelist_unit,NML=hydro_params,IOSTAT=nml_err)
+
+   if(nml_err>0)then
+      if(myid==1)write(*,*)'Error reading namelist &HYDRO_PARAMS. Check formatting.'
+      nml_ok=.false.
+   endif
+
+   ! Checks
+
+   !------------------------------------------------
+   ! Numerical scheme
+   !------------------------------------------------
+#ifdef SOLVERmhd
+   ! set ischeme
+   SELECT CASE (scheme)
+   CASE ('muscl')
+      ischeme = 0
+   CASE ('induction')
+      ischeme = 1
+   CASE DEFAULT
+      if(myid==1)write(*,*)'unknown scheme'
+      nml_ok=.false.
+   END SELECT
+
+   ! Force interpol_var==1 for induction scheme.
+   ! This scheme re-imposes the total energy analytically by forcing P=1,
+   ! so total energy is not conserved anyway and interpol_var=0 is meaningless.
+   ! Worse, it makes the coarse-fine magnetic energy correction end up in the
+   ! thermal energy, which spoils the imposed pressure.
+   ! Only relevant when AMR is enabled (otherwise interpol_var in namelist not read).
+   if(ischeme==1.and.nlevelmax>levelmin.and.interpol_var.ne.1)then
+      if(myid==1)write(*,*)'Error: the induction scheme requires interpol_var=1'
+      nml_ok=.false.
+   endif
+#else
+   ! check the hydro scheme name
+   SELECT CASE (scheme)
+   CASE ('muscl')
+   CASE ('plmde')
+   CASE DEFAULT
+      if(myid==1)write(*,*)'Error: unknown scheme, the hydro solver accepts muscl or plmde'
+      nml_ok=.false.
+   END SELECT
 #endif
 
-end subroutine read_hydro_params
+   !------------------------------------------------
+   ! Riemann solvers
+   ! MHD sets enums for riemann solvers, hydro just does a string compare
+   !------------------------------------------------
+#ifdef SOLVERmhd
+   ! set iriemann
+   SELECT CASE (riemann)
+   CASE ('llf')
+      iriemann = 0
+   CASE ('roe')
+      iriemann = 1
+   CASE ('hll')
+      iriemann = 2
+   CASE ('hlld')
+      iriemann = 3
+   CASE ('upwind')
+      iriemann = 4
+   CASE ('hydro')
+      iriemann = 5
+
+   CASE DEFAULT
+      if(myid==1)write(*,*)'unknown riemann solver'
+      nml_ok=.false.
+   END SELECT
+
+   ! set iriemann2d
+   SELECT CASE (riemann2d)
+   CASE ('llf')
+      iriemann2d = 0
+   CASE ('roe')
+      iriemann2d = 1
+   CASE ('upwind')
+      iriemann2d = 2
+   CASE ('hll')
+      iriemann2d = 3
+   CASE ('hlla')
+      iriemann2d = 4
+   CASE ('hlld')
+      iriemann2d = 5
+   CASE DEFAULT
+      if(myid==1)write(*,*)'unknown 2D riemann solver'
+      nml_ok=.false.
+   END SELECT
+#else
+   ! Hydro solver
+   SELECT CASE (riemann)
+   CASE ('acoustic','exact','llf','hllc','hll')
+      ! accepted values
+   CASE DEFAULT
+      if(myid==1)write(*,*)'unknown riemann solver'
+      nml_ok=.false.
+   END SELECT
+#endif
+
+   !------------------------------------------------
+   ! Slope limiters
+   !------------------------------------------------
+#ifdef SOLVERmhd
+   ! Supported slope types for mhd solver
+   if(slope_type<0.or.slope_type>8)then
+      if(myid==1)write(*,*)'unknown slope type'
+      nml_ok=.false.
+   else
+      if(slope_type==4.or.slope_type==5.or.slope_type==6)then
+         if(myid==1)write(*,*)'slope type 4, 5 and 6 are not supported for MHD'
+         nml_ok=.false.
+#if NDIM<3
+      else if (slope_type==7.or.slope_type==8)then
+         if(myid==1)write(*,*)'slope type 7 and 8 are only supported in 3D for MHD'
+         nml_ok=.false.
+#if NDIM==1
+      else if(slope_type==3)then
+         if(myid==1)write(*,*)'slope type 3 not supported for MHD in 1D'
+         nml_ok=.false.
+#endif
+#endif
+      endif
+   endif
+
+   ! If magnetic slope limiter is unset, pick the same as slope_type
+   if (slope_mag_type == -1) then
+      slope_mag_type = slope_type
+   endif
+
+   ! Check chosen magnetic slope limiter is supported
+   if(slope_mag_type<0.or.slope_mag_type>8)then
+      if(myid==1)write(*,*)'unknown slope type'
+      nml_ok=.false.
+   else
+      if(slope_mag_type>=3.and.slope_mag_type<=6)then
+         if(myid==1)write(*,*)'slope_mag_type 3, 4, 5 and 6 not supported for MHD'
+         nml_ok=.false.
+#if NDIM<3
+      else if(slope_mag_type==7.or.slope_mag_type==8)then
+         if(myid==1)write(*,*)'slope_mag_type 7 and 8 are only supported in 3D for MHD'
+         nml_ok=.false.
+#endif
+      endif
+   endif
+#else
+   ! Supported slope types for hydro solver
+   if(slope_type<0.or.slope_type>8)then
+      if(myid==1)write(*,*)'unknown slope type'
+      nml_ok=.false.
+#if NDIM>1
+   else
+      if(slope_type==4.or.slope_type==5.or.slope_type==6)then
+         if(myid==1)write(*,*)'slope type 4, 5 and 6 are only supported for NDIM==1'
+         nml_ok=.false.
+      endif
+#endif
+   endif
+#endif
+
+  !----------------------------------
+  ! Check viscosity parameters
+  !----------------------------------
+  if (add_viscosity) then
+     select case (viscosity_kind)
+     case('constant_uniform')
+      if (nu_viscosity_bulk + nu_viscosity_shear * (ndim - 1) == 0 &
+          & .or. nu_viscosity_bulk < 0 .or. nu_viscosity_shear < 0) then
+         if(myid==1)write(*,*)'nu_viscosity_bulk + nu_viscosity_shear * (ndim - 1) should be > 0 and both ≥ 0'
+         nml_ok=.false.
+      end if
+
+     case default
+        if(myid==1)write(*,*)'Error: unimplemented viscosity_kind selected'
+        if(myid==1)write(*,*)'Implemented schemes are: constant_uniform'
+        nml_ok=.false.
+     end select
+  end if
+
+end subroutine read_solver_params
+!###############################################################
+!###############################################################
+!###############################################################
+subroutine read_refine_params(namelist_unit,nml_ok)
+   use amr_parameters
+   use amr_commons
+   use hydro_parameters
+   implicit none
+   integer,intent(in)::namelist_unit
+   logical,intent(inout)::nml_ok
+   integer::nml_err,i
+
+   ! Refinement parameters
+   namelist/refine_params/x_refine,y_refine,z_refine,r_refine &
+       & ,a_refine,b_refine,exp_refine,jeans_refine,mass_cut_refine &
+       & ,collapse_jeans_refine,collapse_jeans_Tfloor &
+       & ,collapse_jeans_rho_low,collapse_jeans_rho_high &
+       & ,m_refine,mass_sph,err_grad_d,err_grad_p,err_grad_u &
+       & ,floor_d,floor_u,floor_p,ivar_refine,var_cut_refine &
+#ifdef SOLVERmhd
+       & ,err_grad_A,err_grad_B,err_grad_C,err_grad_B2 &
+       & ,floor_A,floor_B,floor_C,floor_B2,interpol_mag_type &
+#endif
+       & ,interpol_var,interpol_type,sink_refine
+
+   ! Go to the beginning of the file
+   rewind(namelist_unit)
+
+   ! Read namelist
+   read(namelist_unit,NML=refine_params,IOSTAT=nml_err)
+
+   if(nml_err>0)then
+      if(myid==1)write(*,*)'Error reading namelist &REFINE_PARAMS. Check formatting.'
+      nml_ok=.false.
+   endif
+
+  !-----------------------------------
+  ! Check interpolation settings
+  !-----------------------------------
+
+#ifdef SOLVERmhd
+   if(interpol_var<0.or.interpol_var>1)THEN
+      if(myid==1)write(*,*)'Choose interpol_var = 0 or 1'
+      nml_ok=.false.
+   endif
+
+   if(interpol_type<0.or.interpol_type>3)then
+      if(myid==1)write(*,*)'Choose 0<= interpol_type <= 3'
+      nml_ok=.false.
+   endif
+
+   ! set interpol_mag_type the same as interpol_type if unset
+   if(interpol_mag_type==-1)then
+      interpol_mag_type = interpol_type
+   endif
+
+   if(interpol_mag_type<0.or.interpol_mag_type>3)then
+      if(myid==1)write(*,*)'Choose 0<= interpol_mag_type <= 3'
+      nml_ok=.false.
+   endif
+
+#else
+   ! hydro solver case
+   if(interpol_var<0.or.interpol_var>2)THEN
+      if(myid==1)write(*,*)'Choose interpol_var = 0, 1 or 2'
+      nml_ok=.false.
+   endif
+
+   if(interpol_type<0.or.interpol_type>4)then
+      if(myid==1)write(*,*)'Choose 0<= interpol_type <= 4'
+      nml_ok=.false.
+   else
+      if(interpol_type==4.and.interpol_var.ne.2)then
+         if(myid==1)write(*,*)'interpol_type=4 is designed for interpol_var=2'
+         nml_ok=.false.
+      endif
+   endif
+#endif
+
+   !-----------------------------------
+   ! Rearrange level dependent arrays
+   !-----------------------------------
+   do i=nlevelmax,levelmin,-1
+      jeans_refine(i)=jeans_refine(i-levelmin+1)
+   end do
+   do i=1,levelmin-1
+      jeans_refine(i)=-1
+   end do
+
+end subroutine read_refine_params

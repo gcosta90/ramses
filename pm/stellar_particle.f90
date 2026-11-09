@@ -2,7 +2,6 @@ subroutine make_stellar_from_sinks
   use pm_commons
   use amr_commons
   use sink_feedback_parameters
-  use mpi_mod
   implicit none
 
   integer:: isink
@@ -56,7 +55,7 @@ subroutine make_stellar_from_sinks
      if(nobj_new .gt. nsink) then
         write(*,*) 'number of new objects is larger than the number of sinks ',nobj_new, nsink
         write(*,*) "use stellar_strategy='local'"
-        stop
+        call clean_stop
      endif
 
      do iobj = nsink - nobj_new + 1, nsink
@@ -130,11 +129,14 @@ subroutine create_stellar(ncreate, nbuf, id_new)
     ncreate_loc = ncreate
 #endif
 
-    ! Draw random masses from the IMF
-    call sample_powerlaw(mnew_loc, imf_low, imf_high, imf_index, ncreate_loc)
+    if (ncreate_loc > 0) then
 
-    ! Compute lifetime
-    ltnew_loc(1:ncreate_loc) = lt_t0 * exp(lt_a * (log(lt_m0 / mnew_loc))**lt_b)
+        ! Draw random masses from the IMF
+        call sample_powerlaw(mnew_loc, imf_low, imf_high, imf_index, ncreate_loc)
+
+        ! Compute lifetime
+        ltnew_loc(1:ncreate_loc) = lt_t0 * exp(lt_a * (log(lt_m0 / mnew_loc(1:ncreate_loc)))**lt_b)
+    end if
 
     ! Communicate data
 #ifndef WITHOUTMPI

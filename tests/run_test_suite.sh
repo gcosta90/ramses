@@ -25,8 +25,13 @@
 #       ./run_test_suite.sh -q
 #   - Run test suite with coverage:
 #       ./run_test_suite.sh -s
-#   - Run tests with restart:
-#       ./run_test_suite.sh -r
+#   - Restart behaviour:
+#       By default, only tests that opt in via their config.txt
+#       (a line "RESTART: true") are run through the restart mechanism.
+#       ./run_test_suite.sh            # restart the opted-in tests only
+#       ./run_test_suite.sh -r         # force restart on ALL tests
+#       ./run_test_suite.sh -r all     # same as -r
+#       ./run_test_suite.sh -r none    # disable restart for ALL tests
 #
 #######################################################################
 
@@ -44,7 +49,8 @@ DELDATA=true;
 COVERAGE=false;
 CLEAN_ALL=false;
 SELECTTEST=false;
-RESTART=false;
+# Restart mode: "default" (only tests opted-in via config.txt), "all" or "none".
+RESTART_MODE="default";
 while getopts "cdsp:qt:vr" OPTION; do
    case $OPTION in
       c)
@@ -69,7 +75,16 @@ while getopts "cdsp:qt:vr" OPTION; do
          VERBOSE=true;
       ;;
       r)
-         RESTART=true;
+         # -r takes an optional argument ("all" or "none"). getopts treats -r as
+         # a plain flag, so peek at the next token and consume it only if it is
+         # one of the recognised keywords; otherwise -r means "all".
+         eval nextarg=\${$OPTIND};
+         if [ "$nextarg" = "none" ] || [ "$nextarg" = "all" ] ; then
+            RESTART_MODE=$nextarg;
+            OPTIND=$((OPTIND + 1));
+         else
+            RESTART_MODE="all";
+         fi
       ;;
    esac
 done
@@ -90,6 +105,16 @@ LOGFILE="${TEST_DIRECTORY}/test_suite.log";
 GIT_URL=$(git config --get remote.origin.url | sed 's/git@github.com:/https:\/\/github.com\//g');
 GIT_URL=${GIT_URL:0:$((${#GIT_URL}-4))};
 THIS_COMMIT=$(git rev-parse HEAD);
+THIS_COMMIT_SHORT=$(git rev-parse --short HEAD);
+THIS_COMMIT_DATE=$(git log -1 --format=%cd --date=format:%Y-%m-%d);
+THIS_BRANCH=$(git rev-parse --abbrev-ref HEAD);
+# branch names may contain "/" -- flatten for use in a directory name
+THIS_BRANCH_TAG=$(echo "${THIS_BRANCH}" | tr '/' '-');
+# When this run started (UTC), to name its log and PDF in the coverage dir
+RUN_STAMP=$(date -u +%Y-%m-%d_%H-%M-%S);
+# Per-test build/run records, one file per test, added at the end to
+# build_records/ of the coverage dir
+RECORDS_TMP=$(mktemp -d);
 echo > $LOGFILE;
 if [ ${MPI} -eq 1 ]; then
    RUN_TEST_BASE="mpirun -np ${NCPU} ${BIN_DIRECTORY}/${EXECNAME}";
@@ -256,6 +281,17 @@ done
 echo $line | tee -a $LOGFILE;
 
 #######################################################################
+# Remove old or incomplete gcov files from bin and tests
+#######################################################################
+if ${COVERAGE} ; then
+   rm -f ${BIN_DIRECTORY}/*.gc*;
+   for ((i=0;i<$ntests;i++)); do
+      n=${testnum[i]};
+      rm -f ${TEST_DIRECTORY}/${testname[n]}/*.gc*;
+   done
+fi
+
+#######################################################################
 # Loop through all tests
 #######################################################################
 for ((i=0;i<$ntests;i++)); do
@@ -287,6 +323,25 @@ for ((i=0;i<$ntests;i++)); do
       fi
    done
 
+   # Decide whether this test is run through the restart mechanism.
+   #   -r all  -> every test ; -r none -> no test ;
+   #   default -> only tests whose config.txt contains "RESTART: true".
+   DO_RESTART=false;
+   case $RESTART_MODE in
+      all)
+         DO_RESTART=true;
+      ;;
+      none)
+         DO_RESTART=false;
+      ;;
+      *)
+         testrestart=$(grep -i '^[[:space:]]*RESTART[[:space:]]*:' ${TEST_DIRECTORY}/${testname[n]}/config.txt | cut -d ':' -f2 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]');
+         if [ "$testrestart" = "true" ] ; then
+            DO_RESTART=true;
+         fi
+      ;;
+   esac
+
    # Initial cleanup
    $RETURN_TO_BIN;
    if ${make_clean[n]}; then
@@ -297,10 +352,32 @@ for ((i=0;i<$ntests;i++)); do
          make clean >> $LOGFILE 2>&1;
       fi
    fi
+   # Remove leftover gcov files (e.g. after interuption)
+   if ${COVERAGE} ; then
+      rm -f ${BIN_DIRECTORY}/*.gc*;
+   fi
 
    # Compile source
    echo "Compiling source" | tee -a $LOGFILE;
    MAKESTRING="make EXEC=${EXECNAME} MPI=${MPI} GCOV=${GCOV} ${FLAGS}";
+
+   # Record how this test is built and run, for build_records/.
+   # Used to distinguish between "never compiled" and "never executed".
+   if ${COVERAGE} ; then
+      TEST_DEFINES=$(make EXEC=${EXECNAME} MPI=${MPI} GCOV=${GCOV} ${FLAGS} print-FFLAGS_BASE 2>/dev/null | grep -o -- '-D[^[:space:]]*' | paste -sd' ');
+      {
+        echo "test    : ${testname[n]}";
+        echo "  run     : ${RUN_STAMP}";
+        echo "  date    : $(date -u +%Y-%m-%dT%H:%M:%SZ)";
+        echo "  ndim    : ${ndim}";
+        echo "  flags   : ${FLAGS}";
+        echo "  defines : ${TEST_DEFINES}";
+        echo "  mpi     : ${MPI}";
+        echo "  ncpu    : ${NCPU}";
+        echo "  restart : ${DO_RESTART}";
+        echo "  omp_threads : ${OMP_NUM_THREADS:-unset}";
+      } > ${RECORDS_TMP}/${testname[n]//\//_}.txt;
+   fi
    # if [ ${MPI} -eq 1 ]; then
    #    MAKESTRING="${MAKESTRING} -j ${NCPU}";
    # fi
@@ -340,7 +417,7 @@ for ((i=0;i<$ntests;i++)); do
          run_before_test;
    fi
 
-   if $RESTART ; then
+   if $DO_RESTART ; then
       echo  "Restart: step 1 ..." | tee -a $LOGFILE;
       python3 ../../run_with_restart.py -s 1 -t ${rawname[i]}  | tee -a $LOGFILE;
       run_test;
@@ -370,9 +447,9 @@ for ((i=0;i<$ntests;i++)); do
    echo "Plotting and analysing results" | tee -a $LOGFILE;
    status=$(python3 plot-${rawname[i]}.py 2>&1);
    if $VERBOSE ; then
-      echo $status;
+      echo "$status";
    fi
-   echo $status >> $LOGFILE;
+   echo "$status" >> $LOGFILE;
 
    # Print message on test status
    ispassed=$(echo $status | grep PASSED);
@@ -403,7 +480,7 @@ for ((i=0;i<$ntests;i++)); do
    # move coverage files to test dir
    if ${COVERAGE} ; then
       $RETURN_TO_BIN;
-      gcov *.gcno > coverage_stats.txt
+      gcov *.gcno > ${TEST_DIRECTORY}/${testname[n]}/coverage_stats.txt
       cd -
       mv ${BIN_DIRECTORY}/*.gc* .
    fi
@@ -533,15 +610,91 @@ rm $latexfile;
 # Generate total coverage data
 #######################################################################
 if ${COVERAGE} ; then
-   rm -r coverage
-   ALL_TEST_DIRS=""
+   cd ${TEST_DIRECTORY};
+   rm -rf coverage
+   mkdir coverage
+
+   # Name the directory after the branch and commit it measured
+   COVERAGE_DIR="coverage_${THIS_BRANCH_TAG}_${THIS_COMMIT_DATE}_${THIS_COMMIT_SHORT}";
+
+   # Coverage can be collected in several runs on the same commit: earlier
+   # runs are kept, and a test that is run again adds to its earlier data,
+   # e.g. with another build of RAMSES.
+   if [ -d "${COVERAGE_DIR}/gcov_per_test" ] ; then
+      echo "Adding to the coverage of earlier runs in tests/${COVERAGE_DIR}" | tee -a $LOGFILE;
+      cp -r "${COVERAGE_DIR}/gcov_per_test" "${COVERAGE_DIR}/build_records" coverage/ 2>/dev/null;
+      cp "${COVERAGE_DIR}"/test_results*.pdf "${COVERAGE_DIR}"/test_suite*.log coverage/ 2>/dev/null;
+   elif [ -d "${COVERAGE_DIR}" ] ; then
+      echo "tests/${COVERAGE_DIR} has no per-test gcov files to add to: replacing it" | tee -a $LOGFILE;
+   fi
+
+   # Collect each test's .gcov files in gcov_per_test/<category>_<testname>/,
+   # one subdirectory per run, and add the build record of this run to
+   # build_records/<category>_<testname>.txt. The aggregator labels each test
+   # by this name, and sums the runs of a test.
+   mkdir -p coverage/build_records;
    for ((i=0;i<$ntests;i++)); do
       n=${testnum[i]};
-      test_dir_name=${TEST_DIRECTORY}/${testname[n]};
-      ALL_TEST_DIRS="${ALL_TEST_DIRS} ${test_dir_name}"
+      label=${testname[n]//\//_};
+      if ls ${TEST_DIRECTORY}/${testname[n]}/*.gcov > /dev/null 2>&1 ; then
+         mkdir -p coverage/gcov_per_test/${label}/${RUN_STAMP};
+         cp ${TEST_DIRECTORY}/${testname[n]}/*.gcov coverage/gcov_per_test/${label}/${RUN_STAMP}/;
+         cat ${RECORDS_TMP}/${label}.txt >> coverage/build_records/${label}.txt;
+      fi
    done
-   mkdir coverage
-   python3 multi_gcov_aggregator.py ${ALL_TEST_DIRS} coverage
+   rm -rf ${RECORDS_TMP};
+
+   # Write metadata
+   COVERAGE_METADATA="coverage/coverage_metadata.txt";
+   {
+     echo "# How this coverage run was produced.";
+     echo "";
+     echo "branch        : ${THIS_BRANCH}";
+     echo "commit        : ${THIS_COMMIT}";
+     echo "commit_short  : ${THIS_COMMIT_SHORT}";
+     echo "commit_date   : ${THIS_COMMIT_DATE}";
+     echo "repository    : ${GIT_URL}";
+     echo "ntests        : $(ls -d coverage/gcov_per_test/*/ 2>/dev/null | wc -l)";
+     echo "gcov          : $(gcov --version 2>/dev/null | head -1)";
+     echo "compiler      : $(${F90:-gfortran} --version 2>/dev/null | head -1)";
+     echo "";
+     echo "# How each test was built and run is in build_records/, one record per";
+     echo "# run. A run's gcov files, log and PDF carry its run timestamp in their name.";
+   } > ${COVERAGE_METADATA};
+
+   if python3 multi_gcov_aggregator.py coverage/gcov_per_test/*/ coverage --build-records coverage/build_records ; then
+      aggregated=true;
+   else
+      aggregated=false;
+      echo "Coverage aggregation failed: tests/${COVERAGE_DIR} is left unchanged," | tee -a $LOGFILE;
+      echo "the data of this run is in tests/coverage" | tee -a $LOGFILE;
+   fi
+
+   # Keep each test's own .gcov files, to be able to regenerate the report
+   # later and to add later runs on the same commit to it
+   KEEP_PER_TEST_GCOV=true;
+   if ${aggregated} && ${KEEP_PER_TEST_GCOV} ; then
+      echo "Kept per-test gcov files in coverage/gcov_per_test. To rebuild the" | tee -a $LOGFILE;
+      echo "reports without re-running the tests:" | tee -a $LOGFILE;
+      echo "  python3 multi_gcov_aggregator.py <dir>/gcov_per_test/*/ <outdir> \\" | tee -a $LOGFILE;
+      echo "      --build-records <dir>/build_records" | tee -a $LOGFILE;
+   elif ${aggregated} ; then
+      rm -rf coverage/gcov_per_test;
+   fi
+
+   # Move test PDF to coverage dir, to keep everything together. Each run
+   # gets its own, since a directory can collect several runs.
+   if [ -f "${TEST_DIRECTORY}/test_results.pdf" ]; then
+      mv "${TEST_DIRECTORY}/test_results.pdf" coverage/test_results_${RUN_STAMP}.pdf;
+   fi
+
+   if ${aggregated} ; then
+      rm -rf "${COVERAGE_DIR}";
+      mv coverage "${COVERAGE_DIR}";
+      echo "Coverage results collected in tests/${COVERAGE_DIR}" | tee -a $LOGFILE;
+   else
+      COVERAGE_DIR="coverage";
+   fi
 fi
 
 #######################################################################
@@ -571,6 +724,12 @@ if ${DELDATA} ; then
       make clean >> $LOGFILE 2>&1;
    fi
    rm -f ${EXECNAME}*d;
+fi
+
+# Copy test log to coverage dir, now that it is complete. Like the PDF, each
+# run gets its own.
+if ${COVERAGE} && [ -d "${TEST_DIRECTORY}/${COVERAGE_DIR}" ] ; then
+   cp "${LOGFILE}" "${TEST_DIRECTORY}/${COVERAGE_DIR}/test_suite_${RUN_STAMP}.log";
 fi
 
 if $all_tests_ok ; then

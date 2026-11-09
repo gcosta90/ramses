@@ -69,13 +69,20 @@ module pm_parameters
 
   real(dp)::boost_threshold_density=0.1d0   ! Accretion boost threshold for Bondi
 
+  logical::drag_gas=.false.                 ! Activate gas dynamical friction on sinks
+  logical::drag_part=.false.                ! Activate dynamical friction from stars and DM on sinks
+  integer::DF_ncells=4                      ! Radius of the star and DM friction kernel in cells at nlevelmax
+  real(dp)::boost_drag=2.0d0                ! Boost power of gas friction above boost_threshold_density
+  real(dp)::boost_drag_part=0.0d0           ! Boost power of star and DM friction above boost_threshold_density
+  real(dp)::adfmax=-1.0d0                   ! Maximum gas friction acceleration in km/s/Myr, not used if negative
+
   real(dp)::max_mass_nsc=1d15               ! Maximum mass of the Nuclear Star Cluster (msink)
 
   logical::sink_descent=.false.             ! Switch for the sink descent
   real(dp)::gamma_grad_descent=0.0d0        ! Step for the gradient descent
   real(dp)::fudge_graddescent=1.0d0         ! Fudge factor for the for the BB gradient descent
 
-  character(LEN=15)::agn_acc_method='mass'
+  character(LEN=15)::agn_acc_method='mass'  ! bondi accretion mode, choose 'mass' or 'volume' (also for non-agn...)
   character(LEN=15)::agn_inj_method='volume'
 
   type part_t

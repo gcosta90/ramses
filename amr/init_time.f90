@@ -9,16 +9,12 @@ subroutine init_time
 #ifdef RT
   use rt_cooling_module
 #endif
-  use mpi_mod
   implicit none
   integer::i,Nmodel
   real(kind=8)::T2_sim
 #ifdef grackle
   real(dp)::scale_nH,scale_T2,scale_l,scale_d,scale_t,scale_v
   logical::file_exists
-#ifndef WITHOUTMPI
-  integer::info
-#endif
 #endif
 
   if(nrestart==0)then
@@ -87,11 +83,7 @@ subroutine init_time
      iresult = set_default_chemistry_parameters(my_grackle_data)
      if(iresult.eq.0)then
          write(*,*) 'Grackle - error in initialize_chemistry_data'
-#ifndef WITHOUTMPI
-         call MPI_ABORT(MPI_COMM_WORLD,1,info)
-#else
-         stop
-#endif
+         call clean_stop
      endif
      my_grackle_data%use_grackle = use_grackle
      my_grackle_data%with_radiative_cooling = grackle_with_radiative_cooling
@@ -167,11 +159,7 @@ subroutine init_time
      my_grackle_data%UVbackground_redshift_fullon = grackle_UVbackground_redshift_fullon
      if(iresult.eq.0)then
          write(*,*) 'Grackle - error in initialize_chemistry_data'
-#ifndef WITHOUTMPI
-         call MPI_ABORT(MPI_COMM_WORLD,1,info)
-#else
-         stop
-#endif
+         call clean_stop
      endif
      my_grackle_fields%grid_dimension = C_LOC(gr_dimension)
      my_grackle_fields%grid_start = C_LOC(gr_start)
@@ -415,6 +403,7 @@ subroutine init_cosmo
   use pm_commons
   use gadgetreadfilemod
   use mpi_mod
+  use dice_commons
   implicit none
   !------------------------------------------------------
   ! Read cosmological and geometrical parameters
@@ -531,26 +520,41 @@ subroutine init_cosmo
      ! Compute box length in the initial conditions in units of h-1 Mpc
      boxlen_ini=dble(nx)*2**levelmin*dxini(levelmin)*(h0/100)
 
-  CASE ('gadget')
-     if (verbose) write(*,*)'Reading in gadget format from '//TRIM(initfile(levelmin))
-     call gadgetreadheader(TRIM(initfile(levelmin)), 0, gadgetheader, ok)
+  CASE ('gadget','dice')
+     if (filetype == 'gadget') then
+        filename=TRIM(initfile(levelmin))
+     else
+        filename=TRIM(initfile(levelmin))//'/'//TRIM(ic_file)
+     end if
+     if (verbose) write(*,*)'Reading in gadget format from '//TRIM(filename)
+     call gadgetreadheader(TRIM(filename), 0, gadgetheader, ok)
      if(.not.ok) call clean_stop
-     do i=1,6
-        if (i .ne. 2) then
-           if (gadgetheader%nparttotal(i) .ne. 0) then
-              write(*,*) 'Non DM particles present in bin ', i
-              call clean_stop
+     if (filetype == 'gadget') then
+        do i=1,6
+           if (i .ne. 2) then
+              if (gadgetheader%nparttotal(i) .ne. 0) then
+                 write(*,*) 'Non DM particles present in bin ', i
+                 call clean_stop
+              endif
            endif
+        enddo
+        if (gadgetheader%mass(2) == 0) then
+           write(*,*) 'Particles have different masses, not supported'
+           call clean_stop
         endif
-     enddo
-     if (gadgetheader%mass(2) == 0) then
-        write(*,*) 'Particles have different masses, not supported'
-        call clean_stop
-     endif
+     end if
      omega_m = gadgetheader%omega0
      omega_l = gadgetheader%omegalambda
      h0 = gadgetheader%hubbleparam * 100d0
-     boxlen_ini = gadgetheader%boxsize
+     if (filetype == 'gadget') then
+        boxlen_ini = gadgetheader%boxsize
+     else
+        if(gadgetheader%boxsize>0d0) then
+           boxlen_ini = gadgetheader%boxsize/1e3
+        else
+           boxlen_ini = boxlen
+        endif
+     end if
      aexp = gadgetheader%time
      aexp_ini = aexp
      ! Compute SPH equivalent mass (initial gas mass resolution)
